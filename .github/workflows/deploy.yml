@@ -1,0 +1,64 @@
+name: Deploy Sweet House Store
+
+# The store is built from the main repository (YASSIR1778/sweet-house),
+# with `npm run build:store`, and published here on GitHub Pages:
+# https://yassir1778.github.io/sweet-house-store/
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *' # hourly: picks up new commits of the main repository
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.cache.outputs.cache-hit == 'true' && github.event_name == 'schedule' }}
+    env:
+      # Public values only (data is protected by RLS).
+      VITE_SUPABASE_URL: https://gvvcrjxmansmmrnxdrnw.supabase.co
+      VITE_SUPABASE_ANON_KEY: sb_publishable_PA_YKopVF-38Lzw8rMfhgA_1EXjP-Te
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: YASSIR1778/sweet-house
+          ref: main
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: .built
+          key: store-built-${{ steps.sha.outputs.sha }}
+      - if: steps.cache.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.cache.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        run: npm ci && npm run build:store && mkdir -p .built && touch .built/ok
+      - if: steps.cache.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-store
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
